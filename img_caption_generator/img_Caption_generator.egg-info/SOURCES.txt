@@ -1,0 +1,5 @@
+setup.py
+img_Caption_generator.egg-info/PKG-INFO
+img_Caption_generator.egg-info/SOURCES.txt
+img_Caption_generator.egg-info/dependency_links.txt
+img_Caption_generator.egg-info/top_level.txt
