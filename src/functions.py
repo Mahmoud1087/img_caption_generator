@@ -1,15 +1,18 @@
 import string
-
+from PIL import Image
+import keras
+import numpy as np
+import os
 
 # Create function to load the files
 def load_file(filename:str):
     """
-    load_file: takes a filename and loads its contents into a string
+    Takes a filename and loads its contents into a string
 
-    args: 
+    Args: 
         filename (string): path of the file that will be loaded
 
-    returns:
+    Returns:
         text (string): a string of all of the lines in the filename
     """
 
@@ -23,13 +26,13 @@ def load_file(filename:str):
 # Create a function to seperate each image with its captions
 def img_captions(filename:str):
     """
-    img_captions: takes a file of images and all of its captions and creates a dictionary with each image 
+    Takes a file of images and all of its captions and creates a dictionary with each image 
                   as the key and the values are all of its  captions
 
-    args:
+    Args:
         filename (string): the name of the file with the images and captions pair
 
-    returns:
+    Returns:
         image_descriptions (dictionary): a dictionary with each image as the key and its captions in a list as the value
     """
 
@@ -51,12 +54,12 @@ def img_captions(filename:str):
 # Create a function to simplify captions
 def simplify(captions:dict):
     """
-    simplify: takes a dictionary of image and its captions and removes punctuations, numbers, and changes uppercase letters into lowercase.
+    Takes a dictionary of image and its captions and removes punctuations, numbers, and changes uppercase letters into lowercase.
 
-    args: 
+    Args: 
         captions (dictionary): A dictionary of each image as the key and a list of captions as the value.
 
-    returns:
+    Returns:
         captions (dictionary): Returns the same dictionary after simplifying the captions 
     """
     
@@ -83,12 +86,12 @@ def simplify(captions:dict):
 # Create a function to make up the vocab used in the text
 def make_vocab(captions:dict):
     """
-    make_vocab: takes a dictionary of image and its captions and finds all unique words used to make up a set of vocabulary
+    Takes a dictionary of image and its captions and finds all unique words used to make up a set of vocabulary
 
-    args:
+    Args:
         captions (dictionary): A dictionary of each image as the key and a list of captions as the value.
 
-    returns:
+    Returns:
         vocab (set): A set of unique words from all the captions
     """
 
@@ -104,10 +107,10 @@ def make_vocab(captions:dict):
 # Create a function that saves the images and its new editted captions
 def save_captions(captions:dict, filename:str):
     """
-    save_captions: takes the new dictionary of image and its new editted captions and saves them 
+    Takes the new dictionary of image and its new editted captions and saves them 
                    in the original formate of image - caption_number as a text file
 
-    args:
+    Args:
         captions (dictionary): A dictionary of each image as the key and a list of captions as 
                                the value.
         
@@ -126,3 +129,32 @@ def save_captions(captions:dict, filename:str):
     file.write(text)
     file.close()
     
+
+def extract_features(directory):
+    """
+    Takes in a path for the images directory and returns a dictionary of each image and its feature vector that is extraced using the Xception model.
+
+    Args:
+        directory (string): A path of the directory where the raw image files are located.
+
+    Returns:
+        features (dictionary): A dictionary of each image and its feature vector.
+    """
+    
+    xception_feature_extraction_model = keras.applications.Xception(include_top=False, pooling='average') # Don't want the final layers which output the classification prediction instead we stop at the raw features detected
+    features = {}
+    
+    for img in os.listdir(directory):
+        
+        filename = directory / img
+        
+        image = Image.open(filename)
+        image = image.resize((299, 299))
+        image = np.expand_dims(image, axis=0) # changing the shape of the image to (1, 299, 299, 3) as keras expect the input in batches even if batch of 1.
+        image = image / 127.5
+        image = image - 1.0
+        
+        feature = xception_feature_extraction_model.predict(image) # outputs the feature vector
+        features[img] = feature
+        
+    return features
