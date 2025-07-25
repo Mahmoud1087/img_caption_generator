@@ -4,6 +4,7 @@ import keras
 import numpy as np
 import os
 from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.utils import pad_sequences, to_categorical
 
 # Create function to load the files
 def load_file(filename:str):
@@ -247,7 +248,7 @@ def load_features(images:list, vectors:str):
         vectors (string): A path of the saved feature vectors.
 
     Returns:
-        features (dictionary): A dictionary of all the images in the images list as keys and their feature 
+        image_feature_vectors (dictionary): A dictionary of all the images in the images list as keys and their feature 
         vectors stored in the models directory.
     """
     
@@ -256,7 +257,10 @@ def load_features(images:list, vectors:str):
         for i, k in enumerate(f.keys()):
             features[k] = f[k][()]  # Load individual array
             
-    return features
+    # Reshaping the vector to (2048,) instead of (1, 10, 10, 2048)
+    image_feature_vectors = {img:np.mean(features[img][0], axis=(0, 1)) for img in images} 
+    
+    return image_feature_vectors
 
 
 # Create a function to convert the values in a dictionary into a list
@@ -316,3 +320,64 @@ def max_length(img_captions:dict):
     max_len = max(length_of_caps)
     
     return max_len
+
+
+# Create a helper function to return an image, its feature vector, and its caption
+def create_sequences(tokenizer, max_length:int, desc_list:list, feature:list, vocab_size:int):
+    """
+    Creates 3 arrays consisting of the feature vector of a given image, as well as a sequence of inputs, 
+    and an output sequence that would be predicted as part of future training.
+
+    Args:
+        tokenizer (Tokenizer object): A tokenizer object created using keras.src.legacy.preprocessing.text.Tokenizer.
+        max_length (int): The length of the longest caption in the captions available.
+        desc_list (list): A list of all 5 captions for a specific image.
+        feature (list): A feature vector of a specific image as a list.
+        vocab_size (int): The vocabulary size of the dataset.
+
+    Returns:
+        [x1, x2], y: A set with the first element as a list consisting of the feature vector and the input 
+                     sequence, while the second element is the output sequence.
+    """
+    # initialize empty lists for each parameter, where x1 is the input image, x2 is the input vector, and y is 
+    # the output sequence
+    x1, x2, y = list(), list(), list()
+    
+    # loop through each one of the 5 descriptions for each image
+    for desc in desc_list:
+        # encode the sequence into tokens using the tokenizer
+        seq = tokenizer.texts_to_sequences([desc])[0] # Indexing on element 0 because the output is inside 
+        another vector
+        
+        # split the sequence into multiple X:Y pairs
+        for i in range(1, len(seq)):
+            # split into input and output pairs in order to predict the next word based on the previous sequence
+            in_seq, out_seq = seq[:i], seq[i]
+            # pad the input sequence into the max legnth
+            in_seq = pad_sequences([in_seq], maxlen=max_length)[0]
+            # encode the output sequence - becomes a vector of the size of the vocab size
+            out_seq = to_categorical([out_seq], num_classes=vocab_size)[0]
+            # This way the model can predict the next word based on the inupt image feature vector as well as 
+            # the current input sequence
+            x1.append(feature)
+            x2.append(in_seq)
+            y.append(out_seq)
+            
+    return np.array(x1), np.array(x2), np.array(y)
+
+
+# Create a generator function that yields new input/output sequences for each image
+def data_generator(descriptions, features, tokenizer, max_length, vocab_size):
+    while True:
+        for img, description_list in descriptions.items():
+            feature = features[img]
+            
+            # Using the create_sequence function to generate the 3 arrays
+            input_img, input_vector, output_seq = create_sequences(tokenizer=tk, 
+                                                                   max_length=max_length, 
+                                                                   desc_list=description_list, 
+                                                                   feature=feature, 
+                                                                   vocab_size=vocab_size)
+            
+            yield [[input_img, input_vector], output_seq]
+            
