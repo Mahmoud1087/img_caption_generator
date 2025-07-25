@@ -346,8 +346,8 @@ def create_sequences(tokenizer, max_length:int, desc_list:list, feature:list, vo
     # loop through each one of the 5 descriptions for each image
     for desc in desc_list:
         # encode the sequence into tokens using the tokenizer
-        seq = tokenizer.texts_to_sequences([desc])[0] # Indexing on element 0 because the output is inside 
-        another vector
+        # Indexing on element 0 because the output is inside another vector
+        seq = tokenizer.texts_to_sequences([desc])[0] 
         
         # split the sequence into multiple X:Y pairs
         for i in range(1, len(seq)):
