@@ -3,6 +3,10 @@ from PIL import Image
 import keras
 import numpy as np
 import os
+import shutil
+import random
+import matplotlib.pyplot as plt
+from pathlib import Path
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.utils import pad_sequences, to_categorical
 
@@ -153,6 +157,8 @@ def extract_features(directory:str):
     # features detected
     xception_feature_extraction_model = keras.applications.Xception(include_top=False, pooling='average') 
     features = {}
+    
+    directory = Path(directory)
     
     for img in os.listdir(directory):
         
@@ -368,6 +374,35 @@ def create_sequences(tokenizer, max_length:int, desc_list:list, feature:list, vo
 
 # Create a generator function that yields new input/output sequences for each image
 def data_generator(descriptions, features, tokenizer, max_length, vocab_size):
+    """
+    A Python generator that yields batches of training data.
+
+    Each iteration returns:
+      - A tuple of model inputs: [input_img, input_vector]
+          * input_img: NumPy array of image feature vectors (e.g., shape: (num_samples, feature_dim))
+          * input_vector: NumPy array of tokenized and padded partial captions 
+          (e.g., shape: (num_samples, max_length))
+      - The corresponding target output (output_seq): one-hot encoded next-word vectors
+          (e.g., shape: (num_samples, vocab_size)).
+
+    Args:
+        descriptions (dict): A dictionary of all the images in the images list as keys and their captions 
+                             from the filename as their values.
+        
+        features (dict): A dictionary of each image and its feature vector.
+        
+        tokenizer (keras.preprocessing.text.Tokenizer): Tokenizer fitted on the training captions, used 
+                                                        to convert text to integer sequences.
+        
+        max_length (int): The maximum caption length for padding sequences.
+        
+        vocab_size (int): The total number of unique words in the vocabulary (used for one-hot encoding).
+
+    Yields:
+    
+        tuple: ([[input_img, input_vector], output_seq]) for one image and its associated captions.
+    """
+    
     while True:
         for img, description_list in descriptions.items():
             feature = features[img]
@@ -379,5 +414,133 @@ def data_generator(descriptions, features, tokenizer, max_length, vocab_size):
                                                                    feature=feature, 
                                                                    vocab_size=vocab_size)
             
-            yield [[input_img, input_vector], output_seq]
+            yield ( (input_img, input_vector), output_seq )
             
+
+# Create a function to load images to test the model
+def load_testing_imgs(directory:str, txt_file:str):
+    """
+    Selects 4 random images from a source directory, copies them into a directory,
+    extracts features for each image, and reshapes each feature vector to (2048,).
+    
+    Args:
+        directory (string): A path of the directory where the raw image files are located.
+        
+        txt_file (str): Path to a text file containing valid image filenames.
+
+    Returns:
+        features (dictionary): A dictionary of each image and its feature vector.
+    """
+    
+    target_dir = Path("../data/raw/testing_images")
+    
+    # Making sure the path exists
+    if not os.path.isdir(directory):
+        raise ValueError(f"Source directory does not exist: {directory}")
+    
+    # Read image names from text file
+    with open(txt_file, 'r') as f:
+        all_filenames = [line.strip() for line in f if line.strip()]
+
+    # Randomly select 4 from the list
+    selected_images = random.sample(all_filenames, 4)
+
+    # Create or clear target directory
+    if os.path.exists(target_dir):
+        for file in os.listdir(target_dir):
+            os.remove(os.path.join(target_dir, file))
+    else:
+        os.makedirs(target_dir)
+
+    # Copy selected images to target directory
+    for img in selected_images:
+        src = os.path.join(directory, img)
+        dst = os.path.join(target_dir, img)
+        shutil.copy2(src, dst)
+
+    # Extract features for images in the target directory
+    features = extract_features(target_dir)
+
+    # Reshape to (2048,) if needed
+    features = {key: np.mean(value[0], axis=(0, 1)) for key, value in features.items()}
+
+    return features
+
+
+# Create a function that uses the trained model to generate captions for each image
+def generate_captions_for_images(model, tokenizer, features, max_length):
+    """
+    Generate captions for multiple images using the trained model.
+
+    Args:
+        model (keras.Model): The trained image captioning model.
+        
+        tokenizer (keras.preprocessing.text.Tokenizer): Tokenizer fitted on the training captions.
+        
+        features (dict): A dictionary of each image and its feature vector.
+        
+        max_length (int): Maximum caption length.
+
+    Returns:
+    
+        results (dict): A dictionary mapping image filenames to their generated captions.
+    """
+    def word_for_id(integer, tokenizer):
+        for word, index in tokenizer.word_index.items():
+            if index == integer:
+                return word
+    
+    results = {}
+    
+    for img_name, feature in features.items():
+        
+        in_text = 'start'
+        for _ in range(max_length):
+            
+            seq = tokenizer.texts_to_sequences([in_text])[0]
+            seq = pad_sequences([seq], maxlen=max_length)
+
+            # Predict next word
+            yhat = model.predict([np.expand_dims(feature, axis=0), seq], verbose=0)
+            yhat = np.argmax(yhat)
+
+            word = word_for_id(yhat, tokenizer)
+            if word is None:
+                break
+
+            in_text += ' ' + word
+            if word == 'end':
+                break
+
+        # Clean the caption
+        caption = in_text.replace('start', '').replace('end', '').strip()
+        results[img_name] = caption
+
+    return results
+        
+# Create a function to display images and their captions 
+def display_images_with_captions(captions_dict, image_dir):
+    """
+    Displays images with captions in two rows.
+    
+    Args:
+        captions_dict (dict): Mapping of image filenames to captions.
+        image_dir (str): Directory containing the images.
+    """
+    num_images = len(captions_dict)
+    cols = 2
+    rows = (num_images + cols - 1) // cols  # ceiling division
+
+    plt.figure(figsize=(12, 8))  # Adjust figure size
+
+    for idx, (filename, caption) in enumerate(captions_dict.items()):
+        img_path = os.path.join(image_dir, filename)
+        img = Image.open(img_path)
+
+        plt.subplot(rows, cols, idx + 1)
+        plt.imshow(img)
+        plt.axis("off")
+        plt.title(caption, fontsize=10, wrap=True)
+
+    plt.tight_layout()
+    plt.show()
