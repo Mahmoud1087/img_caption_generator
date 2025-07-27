@@ -15,7 +15,10 @@ def run_load_data():
     # Load feature vectors of the images in the images list
     features = load_features(images=images, vectors="../models/features.h5")
     
-    return descriptions
+    # Reshaping the vector to (2048,) instead of (1, 10, 10, 2048)        
+    features = {img:np.mean(features[img][0], axis=(0, 1)) for img in images} 
+    
+    return descriptions, features
 
 if __name__ == "__main__":
     
