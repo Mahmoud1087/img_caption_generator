@@ -468,7 +468,7 @@ def load_testing_imgs(directory:str, txt_file:str):
 
 
 # Create a function that uses the trained model to generate captions for each image
-def generate_captions_for_images(model, tokenizer, features, max_length):
+def generate_captions_for_images(model, tokenizer, features: dict, max_length: int):
     """
     Generate captions for multiple images using the trained model.
 
@@ -498,7 +498,7 @@ def generate_captions_for_images(model, tokenizer, features, max_length):
         for _ in range(max_length):
             
             seq = tokenizer.texts_to_sequences([in_text])[0]
-            seq = pad_sequences([seq], maxlen=max_length)
+            seq = pad_sequences([seq], maxlen=max_length, padding='post')
 
             # Predict next word
             yhat = model.predict([np.expand_dims(feature, axis=0), seq], verbose=0)
@@ -519,7 +519,7 @@ def generate_captions_for_images(model, tokenizer, features, max_length):
     return results
         
 # Create a function to display images and their captions 
-def display_images_with_captions(captions_dict, image_dir):
+def display_images_with_captions(captions_dict: dict, image_dir: str):
     """
     Displays images with captions in two rows.
     
@@ -544,3 +544,83 @@ def display_images_with_captions(captions_dict, image_dir):
 
     plt.tight_layout()
     plt.show()
+    
+    
+# Create a new function for generating captions using beam search instead of greedy search
+def generate_captions_for_images_with_beam_search(model, tokenizer, features: dict, max_length: int, beam_index: int):
+    
+    """
+        Generate captions for multiple images using the trained model.
+
+        Args:
+            model (keras.Model): The trained image captioning model.
+            
+            tokenizer (keras.preprocessing.text.Tokenizer): Tokenizer fitted on the training captions.
+            
+            features (dict): A dictionary of each image and its feature vector.
+            
+            max_length (int): Maximum caption length.
+            
+            beam_index (int): Beam width (the number of parallel sequence paths to tepredictst before 
+                            selecting the most probable).
+
+        Returns:
+        
+            results (dict): A dictionary mapping image filenames to their generated captions.
+        """
+    def beam_search(model, tokenizer, features: list, max_length: int, beam_index: int):
+        
+        start = 'start'
+        # Each element in `sequences` is a pair [caption_so_far, log_probability_score]
+        sequences = [[start, 0.0]]
+
+        while True:
+            all_candidates = []
+
+            # Expand each current candidate caption
+            for caption, score in sequences:
+                # If the caption already ends with 'end', we stop expanding it
+                if caption.split()[-1] == 'end':
+                    all_candidates.append([caption, score])
+                    continue
+
+                seq = tokenizer.texts_to_sequences([caption])[0]
+                seq = pad_sequences([seq], maxlen=max_length, padding='post')
+
+                yhat = model.predict([np.expand_dims(feature, axis=0), seq], verbose=0)
+                
+
+                # Select top `beam_index` most probable next words (highest logits)
+                top_indices = np.argsort(yhat[0])[-beam_index:]
+
+                for idx in top_indices:
+                    word = tokenizer.index_word.get(idx)
+                    if word is None:
+                        continue
+
+                    new_caption = caption + ' ' + word
+
+                    # Add log probability to cumulative score
+                    # 1e-10 prevents log(0)
+                    new_score = score + np.log(yhat[0][idx] + 1e-10)
+
+                    all_candidates.append([new_caption, new_score])
+
+            # Keep top `beam_index` candidates with highest score
+            sequences = sorted(all_candidates, key=lambda tup: tup[1], reverse=True)[:beam_index]
+
+            # Exit if all top candidates end with 'end'
+            if all([cap.split()[-1] == 'end' for cap, _ in sequences]):
+                break
+
+        # The best sequence is the one with the highest score and they are already sorted so the first one
+        best_caption = sequences[0][0]
+
+        return best_caption.replace('start', '').replace('end', '').strip()
+
+    results = {}
+    for img_name, feature in features.items():
+        caption = beam_search(model, tokenizer, feature, max_length, beam_index=3)
+        results[img_name] = caption
+
+    return results
