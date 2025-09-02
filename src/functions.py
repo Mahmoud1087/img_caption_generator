@@ -7,8 +7,8 @@ import shutil
 import random
 import matplotlib.pyplot as plt
 from pathlib import Path
-from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.utils import pad_sequences, to_categorical
+
 
 # Create function to load the files
 def load_file(filename:str):
@@ -129,7 +129,7 @@ def save_captions(captions:dict, filename:str):
 
     lines = []
     for img, image_captions in captions.items():
-        for i, caption in enumerate(image_captions):
+        for _, caption in enumerate(image_captions):
             line = img + "\t" + caption
             lines.append(line)
 
@@ -191,7 +191,7 @@ def load_images(filename:str):
     """
     
     images = []
-    with open(IMG_TEXT_FILES_PATH, 'r') as f:
+    with open(filename, 'r') as f:
         img_files = f.readlines()
         for file in img_files:
             images.append(file[:-1]) 
@@ -254,8 +254,8 @@ def load_features(images:list, vectors:str):
         vectors (string): A path of the saved feature vectors.
 
     Returns:
-        image_feature_vectors (dictionary): A dictionary of all the images in the images list as keys and their feature 
-        vectors stored in the models directory.
+        image_feature_vectors (dictionary): A dictionary of all the images in the images list as keys and 
+                                            their feature vectors stored in the models directory.
     """
     
     features = {}
@@ -282,7 +282,7 @@ def dict_to_list(img_Captions:dict):
     """
     
     all_descs = []
-    for img, captions in descriptions.items():
+    for img, captions in img_Captions.items():
         [all_descs.append(caption) for caption in captions]
         
     return all_descs
@@ -360,7 +360,7 @@ def create_sequences(tokenizer, max_length:int, desc_list:list, feature:list, vo
             # split into input and output pairs in order to predict the next word based on the previous sequence
             in_seq, out_seq = seq[:i], seq[i]
             # pad the input sequence into the max legnth
-            in_seq = pad_sequences([in_seq], maxlen=max_length)[0]
+            in_seq = pad_sequences([in_seq], maxlen=max_length, padding='post')[0]
             # encode the output sequence - becomes a vector of the size of the vocab size
             out_seq = to_categorical([out_seq], num_classes=vocab_size)[0]
             # This way the model can predict the next word based on the inupt image feature vector as well as 
@@ -373,7 +373,8 @@ def create_sequences(tokenizer, max_length:int, desc_list:list, feature:list, vo
 
 
 # Create a generator function that yields new input/output sequences for each image
-def data_generator(descriptions, features, tokenizer, max_length, vocab_size):
+def data_generator(descriptions:dict, features:dict, tokenizer, max_length:int, vocab_size:int, 
+                   use_batch:bool=False, batch_size:int=32):
     """
     A Python generator that yields batches of training data.
 
@@ -391,34 +392,61 @@ def data_generator(descriptions, features, tokenizer, max_length, vocab_size):
         
         features (dict): A dictionary of each image and its feature vector.
         
-        tokenizer (keras.preprocessing.text.Tokenizer): Tokenizer fitted on the training captions, used 
-                                                        to convert text to integer sequences.
+        tokenizer (Tokenizer object): Tokenizer fitted on the training captions, used to convert text to 
+                                      integer sequences.
         
         max_length (int): The maximum caption length for padding sequences.
         
         vocab_size (int): The total number of unique words in the vocabulary (used for one-hot encoding).
+        
+        use_batch (bool): Default False, if set to true generator will yield batches instead of one image at a time.
+        
+        batch_size (int): Number of batches, default is set to 32. Only available if use_batch set to True
 
     Yields:
     
         tuple: ([[input_img, input_vector], output_seq]) for one image and its associated captions.
     """
-    
-    while True:
-        for img, description_list in descriptions.items():
-            feature = features[img]
-            
-            # Using the create_sequence function to generate the 3 arrays
-            input_img, input_vector, output_seq = create_sequences(tokenizer=tk, 
-                                                                   max_length=max_length, 
-                                                                   desc_list=description_list, 
-                                                                   feature=feature, 
-                                                                   vocab_size=vocab_size)
-            
-            yield ( (input_img, input_vector), output_seq )
+    if use_batch == False:
+        
+        while True:
+            for img, description_list in descriptions.items():
+                feature = features[img]
+                # Using the create_sequence function to generate the 3 arrays
+                input_img, input_vector, output_seq = create_sequences(tokenizer=tokenizer, 
+                                                                    max_length=max_length, 
+                                                                    desc_list=description_list, 
+                                                                    feature=feature, 
+                                                                    vocab_size=vocab_size)
+                
+                yield ( (input_img, input_vector), output_seq )
+                
+    elif use_batch == True:
+        x1, x2, y = [], [], []
+        
+        while True:
+            for img, description_list in descriptions.items():
+                feature = features[img]
+                in_img, in_seq, out_seq = create_sequences(tokenizer=tokenizer,
+                                                           max_length=max_length, 
+                                                           desc_list=description_list, 
+                                                           feature=feature, 
+                                                           vocab_size=vocab_size)
+                
+                for i in range(len(in_img)):
+                    x1.append(in_img[i])
+                    x2.append(in_seq[i])
+                    y.append(out_seq[i])
+                    
+                    if len(x1) == batch_size:
+                        yield ((np.array(x1), np.array(x2)), np.array(y))
+                        x1, x2, y = [], [], []
             
 
 # Create a function to load images to test the model
-def load_testing_imgs(directory:str, txt_file:str):
+def load_testing_imgs(directory:str, txt_file:str, full_vector:bool=False, set_random_seed:bool=True, 
+                      random_seed:int=24):
+    
     """
     Selects 4 random images from a source directory, copies them into a directory,
     extracts features for each image, and reshapes each feature vector to (2048,).
@@ -427,10 +455,20 @@ def load_testing_imgs(directory:str, txt_file:str):
         directory (string): A path of the directory where the raw image files are located.
         
         txt_file (str): Path to a text file containing valid image filenames.
+        
+        full_vector (bool): If set to True, the returned feature will be of full size (10, 10, 2048)
+        
+        set_random_seed (bool): Default True, allows setting a random seed to change whether the images are 
+                                randomized or not.
 
+        random_seed (int): Default 42, set_random_seed needs to be True in order to choose a random_seed number.
+        
     Returns:
         features (dictionary): A dictionary of each image and its feature vector.
     """
+    
+    if set_random_seed:
+        random.seed(random_seed)
     
     target_dir = Path("../data/raw/testing_images")
     
@@ -459,16 +497,20 @@ def load_testing_imgs(directory:str, txt_file:str):
         shutil.copy2(src, dst)
 
     # Extract features for images in the target directory
-    features = extract_features(target_dir)
+    test_features = extract_features(target_dir)
+    
+    if full_vector:
+        
+        test_features = {k: np.squeeze(v, axis=0) for k, v in test_features.items()}
+    else:
+        # Reshape to (2048,)
+        test_features = {key: np.mean(value[0], axis=(0, 1)) for key, value in test_features.items()}
 
-    # Reshape to (2048,) if needed
-    features = {key: np.mean(value[0], axis=(0, 1)) for key, value in features.items()}
-
-    return features
+    return test_features
 
 
 # Create a function that uses the trained model to generate captions for each image
-def generate_captions_for_images(model, tokenizer, features: dict, max_length: int):
+def generate_captions_for_images(model, tokenizer, features:dict, max_length:int):
     """
     Generate captions for multiple images using the trained model.
 
@@ -526,6 +568,7 @@ def display_images_with_captions(captions_dict: dict, image_dir: str):
     Args:
         captions_dict (dict): Mapping of image filenames to captions.
         image_dir (str): Directory containing the images.
+        
     """
     num_images = len(captions_dict)
     cols = 2
@@ -547,7 +590,8 @@ def display_images_with_captions(captions_dict: dict, image_dir: str):
     
     
 # Create a new function for generating captions using beam search instead of greedy search
-def generate_captions_for_images_with_beam_search(model, tokenizer, features: dict, max_length: int, beam_index: int):
+def generate_captions_for_images_with_beam_search(model, tokenizer, features:dict, max_length:int, 
+                                                  beam_index:int=3):
     
     """
         Generate captions for multiple images using the trained model.
@@ -555,7 +599,7 @@ def generate_captions_for_images_with_beam_search(model, tokenizer, features: di
         Args:
             model (keras.Model): The trained image captioning model.
             
-            tokenizer (keras.preprocessing.text.Tokenizer): Tokenizer fitted on the training captions.
+            tokenizer (Tokenizer Object): Tokenizer fitted on the training captions.
             
             features (dict): A dictionary of each image and its feature vector.
             
@@ -568,7 +612,7 @@ def generate_captions_for_images_with_beam_search(model, tokenizer, features: di
         
             results (dict): A dictionary mapping image filenames to their generated captions.
         """
-    def beam_search(model, tokenizer, features: list, max_length: int, beam_index: int):
+    def beam_search(model, tokenizer, max_length:int, beam_index:int):
         
         start = 'start'
         # Each element in `sequences` is a pair [caption_so_far, log_probability_score]
@@ -620,7 +664,7 @@ def generate_captions_for_images_with_beam_search(model, tokenizer, features: di
 
     results = {}
     for img_name, feature in features.items():
-        caption = beam_search(model, tokenizer, feature, max_length, beam_index=3)
+        caption = beam_search(model, tokenizer, max_length, beam_index=beam_index)
         results[img_name] = caption
 
     return results
