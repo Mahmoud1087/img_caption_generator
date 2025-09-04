@@ -64,9 +64,11 @@ The goal is to build a system that can look at an image and produce a natural la
 **Usage**
 
 1. Preprocess Data
-
-    `python scripts/clean_data.py`
-    `python scripts/tokenize.py`
+    
+    ```
+    python scripts/clean_data.py
+    python scripts/tokenize.py
+    ```
 
 2. Extract Features
 
