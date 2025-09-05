@@ -1,4 +1,4 @@
-***Image Caption Generator***
+**Image Caption Generator**
 
 Welcome to the Image Caption Generator repository!
 This project uses deep learning with CNNs, LSTMs, and GloVe embeddings to automatically generate descriptive captions for images.
