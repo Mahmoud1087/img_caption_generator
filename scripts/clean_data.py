@@ -1,4 +1,4 @@
-from img_caption_generator import img_captions, simplify, save_captions, data_raw_dir, data_cleaned_dir
+from src import img_captions, simplify, save_captions, data_raw_dir, data_cleaned_dir
 
 
 TOKEN_PATH = data_raw_dir / "Flickr8k.token.txt"
