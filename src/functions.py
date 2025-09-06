@@ -445,7 +445,7 @@ def data_generator(descriptions:dict, features:dict, tokenizer, max_length:int, 
 
 # Create a function to load images to test the model
 def load_testing_imgs(directory:str, txt_file:str, full_vector:bool=False, set_random_seed:bool=True, 
-                      random_seed:int=24):
+                      random_seed:int=42):
     
     """
     Selects 4 random images from a source directory, copies them into a directory,

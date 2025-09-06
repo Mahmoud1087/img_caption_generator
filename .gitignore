@@ -1,2 +1,4 @@
 models/features.h5
 models/features.h5
+models/
+notebooks/glove*

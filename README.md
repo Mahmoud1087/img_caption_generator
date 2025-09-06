@@ -1,4 +1,4 @@
-*Image Caption Generator*
+***Image Caption Generator***
 
 Welcome to the Image Caption Generator repository!
 This project uses deep learning with CNNs, LSTMs, and GloVe embeddings to automatically generate descriptive captions for images.
@@ -72,22 +72,30 @@ The goal is to build a system that can look at an image and produce a natural la
 
 2. Extract Features
 
-    `python scripts/feature_extraction.py`
+    ```
+    python scripts/feature_extraction.py
+    ```
 
 3. Train Model
 
-    `python scripts/main.py`
+    ```
+    python scripts/main.py
+    ```
 
 4. Generate Captions
 
-    `from scripts.model import generate_caption`
-    `caption = generate_caption("data/raw/testing_images/example.jpg")`
-    `print("Generated Caption:", caption)`
+    ```
+    from scripts.model import generate_caption
+    caption = generate_caption("data/raw/testing_images/example.jpg")
+    print("Generated Caption:", caption)
+    ```
 
 5. Expected output:
 
-    `Generated Caption:`
-    `"a young boy is playing with a dog in the park"`
+    ```
+    Generated Caption:
+    "a young boy is playing with a dog in the park"
+    ```
 
 
 **Model Performance**
